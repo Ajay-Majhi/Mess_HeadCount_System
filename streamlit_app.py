@@ -453,7 +453,7 @@ if page == " Record Headcount":
             st.metric("Total Present", len(present_df))
 
 # ── Video Headcount ───────────────────────────────────────────────────────────
-elif page == "🎥 Video Headcount":
+elif page == " Video Headcount":
     st.header("Video Headcount Extraction")
     st.write(
         "Upload a mess / canteen video and the system will automatically count "
