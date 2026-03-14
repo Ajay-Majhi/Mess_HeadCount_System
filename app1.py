@@ -220,7 +220,6 @@ def to_excel(dfs: dict):
     return buffer.getvalue()
 
 
-
 # ── Video processing (YOLO + DeepFace + FaceNet) ─────────────────────────────
 
 embedder = FaceNet()
@@ -346,14 +345,13 @@ def process_video(video_path, sample_every=15, progress_cb=None):
 
     return counts,sample_imgs,fps,len(unique_faces)
 
-
 # ── App layout ────────────────────────────────────────────────────────────────
 
 init_db()
 
 st.set_page_config(
     page_title="Mess Headcount System",
-    page_icon="._.",
+    page_icon=".-.",
     layout="wide",
 )
 
@@ -363,14 +361,14 @@ st.markdown("---")
 page = st.sidebar.selectbox(
     "Navigation",
     [
-        " Record Headcount",
-        " Video Headcount",
-        " Personnel Management",
-        " Reports & Summary",
+        "Record Headcount",
+        "Video Headcount",
+        "Personnel Management",
+        "Reports & Summary",
     ],
 )
-
 # ── Record Headcount ──────────────────────────────────────────────────────────
+
 if page == " Record Headcount":
     st.header("Record Headcount")
 
@@ -429,7 +427,7 @@ if page == " Record Headcount":
                         selected_ids.append(row["id"])
             st.markdown("---")
 
-        if st.button(" Save Headcount", type="primary"):
+        if st.button("Save Headcount", type="primary"):
             if not recorded_by.strip():
                 st.error("Please enter who is recording.")
             else:
@@ -454,17 +452,17 @@ if page == " Record Headcount":
             st.metric("Total Present", len(present_df))
 
 # ── Video Headcount ───────────────────────────────────────────────────────────
-elif page == "🎥 Video Headcount":
+elif page == "Video Headcount":
     st.header("Video Headcount Extraction")
     st.write(
         "Upload a mess / canteen video and the system will automatically count "
         "the number of people visible and report the total headcount."
     )
 
-    with st.expander("ℹ How it works", expanded=False):
+    with st.expander("How it works", expanded=False):
         st.markdown("""
         - The video is sampled every N frames (configurable).
-        - Each sampled frame is analysed using the **HOG (Histogram of Oriented Gradients)**
+        - Each sampled frame is analysed using the **YOLO (You Only Look Once)**
           person detector built into OpenCV — no internet or GPU required.
         - Detected persons are highlighted with green bounding boxes.
         - The **peak count** (maximum persons detected in any single frame) is used as the
@@ -505,7 +503,7 @@ elif page == "🎥 Video Headcount":
                     progress_bar.progress(p, text=f"Analysing… {int(p*100)}%")
 
                 with st.spinner("Processing frames — this may take a moment…"):
-                    counts, sample_imgs, fps = process_video(
+                    counts, sample_imgs, fps, *rest = process_video(
                         tmp_path, sample_every=sample_every, progress_cb=update_progress
                     )
 
@@ -575,7 +573,7 @@ elif page == "🎥 Video Headcount":
         st.dataframe(hist_df, use_container_width=True)
 
 # ── Personnel Management ──────────────────────────────────────────────────────
-elif page == "👥 Personnel Management":
+elif page == " Personnel Management":
     st.header("Personnel Management")
 
     tab1, tab2 = st.tabs(["Add Personnel", "Manage Existing"])
@@ -609,7 +607,7 @@ elif page == "👥 Personnel Management":
         if df.empty:
             st.info("No personnel records found.")
         else:
-            df["Status"] = df["active"].apply(lambda x: "✅ Active" if x else "❌ Inactive")
+            df["Status"] = df["active"].apply(lambda x: "Active" if x else "Inactive")
             st.dataframe(
                 df[["name", "rank", "unit", "Status"]].rename(
                     columns={"name": "Name", "rank": "Rank", "unit": "Unit"}
