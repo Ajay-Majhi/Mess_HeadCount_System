@@ -7,9 +7,6 @@ import tempfile
 import os
 import cv2
 import numpy as np
-from ultralytics import YOLO
-from deepface import DeepFace
-from keras_facenet import FaceNet
 
 DB_PATH = "mess_headcount.db"
 
@@ -220,130 +217,72 @@ def to_excel(dfs: dict):
     return buffer.getvalue()
 
 
-# ── Video processing (YOLO + DeepFace + FaceNet) ─────────────────────────────
+# ── Video processing ──────────────────────────────────────────────────────────
 
-embedder = FaceNet()
-yolo_model = YOLO("yolov8n.pt")   # use YOLO11 face model
-
-def get_embedding(face_img):
-    face = cv2.resize(face_img,(160,160))
-    face = np.expand_dims(face,axis=0)
-    embedding = embedder.embeddings(face)
-    return embedding[0]
+def build_hog():
+    hog = cv2.HOGDescriptor()
+    hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
+    return hog
 
 
-def match_face(embedding, database, threshold=0.7):
-
-    if len(database)==0:
-        return False
-
-    for db_emb in database:
-
-        dist = np.linalg.norm(embedding-db_emb)
-
-        if dist < threshold:
-            return True
-
-    return False
+def count_people_in_frame(hog, frame, scale=1.05, win_stride=(8, 8), padding=(4, 4)):
+    resized = cv2.resize(frame, (640, 480))
+    rects, _ = hog.detectMultiScale(
+        resized,
+        winStride=win_stride,
+        padding=padding,
+        scale=scale,
+    )
+    return rects
 
 
-def process_video(video_path, sample_every=15, progress_cb=None):
-
+def process_video(video_path: str, sample_every: int = 30, progress_cb=None):
+    hog = build_hog()
     cap = cv2.VideoCapture(video_path)
 
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     fps = cap.get(cv2.CAP_PROP_FPS) or 25
 
+    counts = []
+    sample_imgs = []
     frame_no = 0
 
-    unique_faces = []
-    counts=[]
-    sample_imgs=[]
-
     while True:
-
         ret, frame = cap.read()
-
         if not ret:
             break
 
         if frame_no % sample_every == 0:
+            rects = count_people_in_frame(hog, frame)
+            n = len(rects)
+            counts.append((frame_no, n))
 
-            results = yolo_model(frame)
-
-            faces_in_frame=0
-
-            annotated = frame.copy()
-
-            for r in results:
-
-                boxes=r.boxes.xyxy.cpu().numpy()
-
-                for box in boxes:
-
-                    x1,y1,x2,y2 = map(int,box)
-
-                    face = frame[y1:y2,x1:x2]
-
-                    if face.size==0:
-                        continue
-
-                    try:
-
-                        emb = get_embedding(face)
-
-                        known = match_face(emb,unique_faces)
-
-                        if not known:
-
-                            unique_faces.append(emb)
-
-                        faces_in_frame+=1
-
-                        cv2.rectangle(
-                            annotated,
-                            (x1,y1),
-                            (x2,y2),
-                            (0,255,0),
-                            2
-                        )
-
-                    except:
-                        pass
-
-
-            counts.append((frame_no,faces_in_frame))
-
+            annotated = cv2.resize(frame, (640, 480))
+            for (x, y, w, h) in rects:
+                cv2.rectangle(annotated, (x, y), (x + w, y + h), (0, 255, 0), 2)
             cv2.putText(
                 annotated,
-                f"Faces: {faces_in_frame}  Unique: {len(unique_faces)}",
-                (10,30),
+                f"People: {n}  Frame: {frame_no}",
+                (10, 30),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.8,
-                (0,255,0),
-                2
+                0.9,
+                (0, 255, 0),
+                2,
             )
 
-            _,buf=cv2.imencode(".jpg",annotated)
+            _, buf = cv2.imencode(".jpg", annotated)
+            sample_imgs.append((frame_no, buf.tobytes()))
 
-            sample_imgs.append((frame_no,buf.tobytes()))
+            if progress_cb and total_frames > 0:
+                progress_cb(min(frame_no / total_frames, 1.0))
 
-            if progress_cb and total_frames>0:
-
-                progress_cb(
-                    min(frame_no/total_frames,1.0)
-                )
-
-        frame_no+=1
-
+        frame_no += 1
 
     cap.release()
-
     if progress_cb:
         progress_cb(1.0)
 
-
-    return counts,sample_imgs,fps,len(unique_faces)
+    return counts, sample_imgs, fps
 
 
 # ── App layout ────────────────────────────────────────────────────────────────
@@ -352,25 +291,25 @@ init_db()
 
 st.set_page_config(
     page_title="Mess Headcount System",
-    page_icon="",
+    page_icon="🍽️",
     layout="wide",
 )
 
-st.title(" Mess Headcount System")
+st.title("🍽️ Mess Headcount System")
 st.markdown("---")
 
 page = st.sidebar.selectbox(
     "Navigation",
     [
-        " Record Headcount",
-        " Video Headcount",
-        " Personnel Management",
-        " Reports & Summary",
+        "📋 Record Headcount",
+        "🎥 Video Headcount",
+        "👥 Personnel Management",
+        "📊 Reports & Summary",
     ],
 )
 
 # ── Record Headcount ──────────────────────────────────────────────────────────
-if page == " Record Headcount":
+if page == "📋 Record Headcount":
     st.header("Record Headcount")
 
     col1, col2, col3 = st.columns(3)
@@ -428,7 +367,7 @@ if page == " Record Headcount":
                         selected_ids.append(row["id"])
             st.markdown("---")
 
-        if st.button(" Save Headcount", type="primary"):
+        if st.button("💾 Save Headcount", type="primary"):
             if not recorded_by.strip():
                 st.error("Please enter who is recording.")
             else:
@@ -460,7 +399,7 @@ elif page == "🎥 Video Headcount":
         "the number of people visible and report the total headcount."
     )
 
-    with st.expander(" How it works", expanded=False):
+    with st.expander("ℹ️ How it works", expanded=False):
         st.markdown("""
         - The video is sampled every N frames (configurable).
         - Each sampled frame is analysed using the **HOG (Histogram of Oriented Gradients)**
@@ -490,7 +429,7 @@ elif page == "🎥 Video Headcount":
     if uploaded is not None:
         st.video(uploaded)
 
-        if st.button(" Analyse Video", type="primary"):
+        if st.button("🔍 Analyse Video", type="primary"):
             with tempfile.NamedTemporaryFile(
                 delete=False, suffix=os.path.splitext(uploaded.name)[1]
             ) as tmp:
@@ -527,7 +466,7 @@ elif page == "🎥 Video Headcount":
                     )
 
                     st.markdown("---")
-                    st.subheader(" Analysis Results")
+                    st.subheader("📊 Analysis Results")
                     m1, m2, m3, m4 = st.columns(4)
                     m1.metric("Peak Headcount", peak)
                     m2.metric("Average per Frame", f"{avg:.1f}")
@@ -558,7 +497,7 @@ elif page == "🎥 Video Headcount":
                             )
 
                     st.success(
-                        f" Analysis complete. Estimated headcount: **{peak} people** "
+                        f"✅ Analysis complete. Estimated headcount: **{peak} people** "
                         f"(peak across {total_frames_analysed} sampled frames). Result saved."
                     )
 
@@ -566,7 +505,7 @@ elif page == "🎥 Video Headcount":
                 os.unlink(tmp_path)
 
     st.markdown("---")
-    st.subheader(" Previous Video Analysis History")
+    st.subheader("📁 Previous Video Analysis History")
     hist_df = get_video_history()
     if hist_df.empty:
         st.info("No video analyses recorded yet.")
@@ -574,7 +513,7 @@ elif page == "🎥 Video Headcount":
         st.dataframe(hist_df, use_container_width=True)
 
 # ── Personnel Management ──────────────────────────────────────────────────────
-elif page == " Personnel Management":
+elif page == "👥 Personnel Management":
     st.header("Personnel Management")
 
     tab1, tab2 = st.tabs(["Add Personnel", "Manage Existing"])
@@ -588,7 +527,7 @@ elif page == " Personnel Management":
             with col2:
                 rank = st.text_input("Rank *")
             with col3:
-                unit = st.text_input("Unit / Hostel *")
+                unit = st.text_input("Unit / Department *")
             submitted = st.form_submit_button("Add Personnel", type="primary")
             if submitted:
                 if not name or not rank or not unit:
@@ -608,7 +547,7 @@ elif page == " Personnel Management":
         if df.empty:
             st.info("No personnel records found.")
         else:
-            df["Status"] = df["active"].apply(lambda x: " Active" if x else " Inactive")
+            df["Status"] = df["active"].apply(lambda x: "✅ Active" if x else "❌ Inactive")
             st.dataframe(
                 df[["name", "rank", "unit", "Status"]].rename(
                     columns={"name": "Name", "rank": "Rank", "unit": "Unit"}
@@ -638,7 +577,7 @@ elif page == " Personnel Management":
                     st.rerun()
 
 # ── Reports & Summary ─────────────────────────────────────────────────────────
-elif page == " Reports & Summary":
+elif page == "📊 Reports & Summary":
     st.header("Reports & Summary")
 
     col1, col2 = st.columns(2)
@@ -699,7 +638,7 @@ elif page == " Reports & Summary":
 
     st.markdown("---")
     st.subheader("Export to Excel")
-    if st.button(" Download Excel Report"):
+    if st.button("📥 Download Excel Report"):
         excel_data = to_excel({
             "Daily Summary": get_summary(start_date, end_date),
             "By Personnel": get_attendance_by_person(start_date, end_date),
